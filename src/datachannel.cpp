@@ -179,15 +179,16 @@ void DataChannel::processOpenMessage(message_ptr) {
 }
 
 bool DataChannel::outgoing(message_ptr message) {
-	if (mIsClosed)
-		throw std::runtime_error("DataChannel is closed");
-
-	if (message->size() > maxMessageSize())
-		throw std::runtime_error("Message size exceeds limit");
-
 	auto transport = mSctpTransport.lock();
 	if (!transport)
-		throw std::runtime_error("DataChannel transport is not open");
+		return false;
+
+	if (mIsClosed)
+		return false;
+
+	auto remoteMax = maxMessageSize();
+	if (message->size() > remoteMax)
+		return false;
 
 	// Before the ACK has been received on a DataChannel, all messages must be sent ordered
 	message->reliability = mIsOpen ? mReliability : nullptr;
@@ -249,6 +250,8 @@ NegociatedDataChannel::NegociatedDataChannel(std::weak_ptr<PeerConnection> pc,
 NegociatedDataChannel::~NegociatedDataChannel() {}
 
 void NegociatedDataChannel::open(shared_ptr<SctpTransport> transport) {
+
+	std::lock_guard<std::mutex> lg(mMutex);
 	mSctpTransport = transport;
 
 	uint8_t channelType;
@@ -291,6 +294,7 @@ void NegociatedDataChannel::open(shared_ptr<SctpTransport> transport) {
 }
 
 void NegociatedDataChannel::processOpenMessage(message_ptr message) {
+	std::lock_guard<std::mutex> lg(mMutex);
 	auto transport = mSctpTransport.lock();
 	if (!transport)
 		throw std::runtime_error("DataChannel has no transport");
